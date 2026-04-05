@@ -1,0 +1,50 @@
+name: NovaPay CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changed-services: ${{ steps.detect.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: detect
+        run: |
+          CHANGED=$(git diff --name-only HEAD^ HEAD | grep '^services/' | cut -d'/' -f2 | sort -u | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "services=$CHANGED" >> $GITHUB_OUTPUT
+
+  test-and-build:
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    if: needs.detect-changes.outputs.changed-services != '[]'
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.detect-changes.outputs.changed-services) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        working-directory: services/${{ matrix.service }}
+        run: bun install
+      - name: Run tests
+        working-directory: services/${{ matrix.service }}
+        run: bun test
+      - name: Get version
+        id: version
+        working-directory: services/${{ matrix.service }}
+        run: echo "version=$(bun -e "console.log(require('./package.json').version)")" >> $GITHUB_OUTPUT
+      - name: Build Docker image
+        working-directory: services/${{ matrix.service }}
+        run: docker build -t novapay/${{ matrix.service }}:${{ steps.version.outputs.version }} .
+      - name: Fail if build fails
+        if: failure()
+        run: echo "Build or tests failed for ${{ matrix.service }}. Blocking merge." && exit 1

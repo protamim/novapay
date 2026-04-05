@@ -1,0 +1,201 @@
+version: '3.9'
+
+x-app-env: &app-env
+  MASTER_ENCRYPTION_KEY: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+  REDIS_URL: redis://redis:6379
+  JAEGER_ENDPOINT: http://jaeger:14268/api/traces
+  ACCOUNT_SERVICE_URL: http://account-service:3001
+  TRANSACTION_SERVICE_URL: http://transaction-service:3002
+  LEDGER_SERVICE_URL: http://ledger-service:3003
+  FX_SERVICE_URL: http://fx-service:3004
+  PAYROLL_SERVICE_URL: http://payroll-service:3005
+  ADMIN_SERVICE_URL: http://admin-service:3006
+
+x-postgres-healthcheck: &postgres-healthcheck
+  test: ["CMD-SHELL", "pg_isready -U postgres"]
+  interval: 5s
+  timeout: 5s
+  retries: 5
+
+services:
+  # ── Databases ────────────────────────────────────────────────────────────
+  postgres-account:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: accountdb
+    healthcheck: *postgres-healthcheck
+
+  postgres-transaction:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: transactiondb
+    healthcheck: *postgres-healthcheck
+
+  postgres-ledger:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ledgerdb
+    healthcheck: *postgres-healthcheck
+
+  postgres-fx:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fxdb
+    healthcheck: *postgres-healthcheck
+
+  postgres-payroll:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: payrolldb
+    healthcheck: *postgres-healthcheck
+
+  postgres-admin:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: admindb
+    healthcheck: *postgres-healthcheck
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Observability ─────────────────────────────────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+  # ── App Services ──────────────────────────────────────────────────────────
+  account-service:
+    build: ../services/account-service
+    ports:
+      - "3001:3001"
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgres://postgres:postgres@postgres-account:5432/accountdb
+      OTEL_SERVICE_NAME: account-service
+      PORT: "3001"
+    depends_on:
+      postgres-account:
+        condition: service_healthy
+
+  transaction-service:
+    build: ../services/transaction-service
+    ports:
+      - "3002:3002"
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgres://postgres:postgres@postgres-transaction:5432/transactiondb
+      OTEL_SERVICE_NAME: transaction-service
+      PORT: "3002"
+    depends_on:
+      postgres-transaction:
+        condition: service_healthy
+
+  ledger-service:
+    build: ../services/ledger-service
+    ports:
+      - "3003:3003"
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgres://postgres:postgres@postgres-ledger:5432/ledgerdb
+      OTEL_SERVICE_NAME: ledger-service
+      PORT: "3003"
+    depends_on:
+      postgres-ledger:
+        condition: service_healthy
+
+  fx-service:
+    build: ../services/fx-service
+    ports:
+      - "3004:3004"
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgres://postgres:postgres@postgres-fx:5432/fxdb
+      OTEL_SERVICE_NAME: fx-service
+      PORT: "3004"
+    depends_on:
+      postgres-fx:
+        condition: service_healthy
+
+  payroll-service:
+    build: ../services/payroll-service
+    ports:
+      - "3005:3005"
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgres://postgres:postgres@postgres-payroll:5432/payrolldb
+      OTEL_SERVICE_NAME: payroll-service
+      PORT: "3005"
+    depends_on:
+      postgres-payroll:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  admin-service:
+    build: ../services/admin-service
+    ports:
+      - "3006:3006"
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgres://postgres:postgres@postgres-admin:5432/admindb
+      OTEL_SERVICE_NAME: admin-service
+      PORT: "3006"
+      ADMIN_API_KEY: admin-secret
+    depends_on:
+      postgres-admin:
+        condition: service_healthy
+
+  # ── API Gateway ───────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - account-service
+      - transaction-service
+      - ledger-service
+      - fx-service
+      - payroll-service
+      - admin-service

@@ -1,0 +1,18 @@
+groups:
+  - name: novapay-critical
+    rules:
+      - alert: LedgerInvariantViolation
+        expr: ledger_invariant_violation_total > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CRITICAL: Ledger invariant violated — money created or destroyed"
+
+      - alert: HighTransactionFailureRate
+        expr: rate(transactions_total{status="failed"}[5m]) / rate(transactions_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Transaction failure rate exceeded 5% over the last 5 minutes"
