@@ -47,9 +47,12 @@ fx.post('/quote', async (c) => {
   );
 });
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // GET /fx/quote/:id — fetch a quote with computed expiry / used state
 fx.get('/quote/:id', async (c) => {
   const id = c.req.param('id');
+  if (!UUID_REGEX.test(id)) return c.json({ error: 'Invalid quote ID format' }, 400);
   const [quote] = await db.select().from(fxQuotes).where(eq(fxQuotes.id, id));
 
   if (!quote) return c.json({ error: 'Quote not found' }, 404);
@@ -68,6 +71,7 @@ fx.get('/quote/:id', async (c) => {
 // POST /fx/quote/:id/consume — internal-only; marks quote as used atomically
 fx.post('/quote/:id/consume', async (c) => {
   const id = c.req.param('id');
+  if (!UUID_REGEX.test(id)) return c.json({ error: 'Invalid quote ID format' }, 400);
   const [quote] = await db.select().from(fxQuotes).where(eq(fxQuotes.id, id));
 
   const span = trace.getActiveSpan();
