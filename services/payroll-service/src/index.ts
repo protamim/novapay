@@ -7,7 +7,7 @@ import payrollRoutes from './routes/payroll.routes';
 import { startPayrollWorker } from './queue/payroll.queue';
 import { processPayrollJob } from './services/payroll.service';
 
-const app = new Hono();
+const app = new Hono().basePath("/api");
 app.use('*', requestId());
 app.use('*', logger());
 app.use('*', async (c, next) => {

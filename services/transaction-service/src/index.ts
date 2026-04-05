@@ -6,7 +6,7 @@ import { register, httpDuration } from './metrics';
 import transfers from './routes/transfers';
 import { startRecoveryWorker } from './workers/recovery.worker';
 
-const app = new Hono();
+const app = new Hono().basePath("/api");
 app.use('*', requestId());
 app.use('*', logger());
 app.use('*', async (c, next) => {

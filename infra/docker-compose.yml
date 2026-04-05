@@ -2,12 +2,12 @@ x-app-env: &app-env
   MASTER_ENCRYPTION_KEY: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
   REDIS_URL: redis://redis:6379
   JAEGER_ENDPOINT: http://jaeger:4318/v1/traces
-  ACCOUNT_SERVICE_URL: http://account-service:3001
-  TRANSACTION_SERVICE_URL: http://transaction-service:3002
-  LEDGER_SERVICE_URL: http://ledger-service:3003
-  FX_SERVICE_URL: http://fx-service:3004
-  PAYROLL_SERVICE_URL: http://payroll-service:3005
-  ADMIN_SERVICE_URL: http://admin-service:3006
+  ACCOUNT_SERVICE_URL: http://account-service:3001/api
+  TRANSACTION_SERVICE_URL: http://transaction-service:3002/api
+  LEDGER_SERVICE_URL: http://ledger-service:3003/api
+  FX_SERVICE_URL: http://fx-service:3004/api
+  PAYROLL_SERVICE_URL: http://payroll-service:3005/api
+  ADMIN_SERVICE_URL: http://admin-service:3006/api
 
 x-postgres-healthcheck: &postgres-healthcheck
   test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -149,6 +149,7 @@ services:
       <<: *app-env
       DATABASE_URL: postgres://postgres:postgres@postgres-fx:5432/fxdb
       OTEL_SERVICE_NAME: fx-service
+      # FX_PROVIDER_DOWN: true
       PORT: "3004"
     depends_on:
       postgres-fx:
