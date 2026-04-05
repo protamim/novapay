@@ -10,15 +10,18 @@ import {
 const ledger = new Hono();
 
 ledger.post('/entries', async (c) => {
-  let body: unknown;
+  let raw: unknown;
   try {
-    body = await c.req.json();
+    raw = await c.req.json();
   } catch {
     return c.json({ error: 'Invalid JSON' }, 400);
   }
 
+  // Accept both a raw array and the { entries: [...] } wrapper form
+  const body = Array.isArray(raw) ? raw : (raw as any)?.entries;
+
   if (!Array.isArray(body)) {
-    return c.json({ error: 'Body must be an array of ledger entries' }, 400);
+    return c.json({ error: 'Body must be an array of ledger entries or { entries: [...] }' }, 400);
   }
 
   const span = trace.getActiveSpan();

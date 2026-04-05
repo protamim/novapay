@@ -11,7 +11,7 @@ export interface LedgerEntryInput {
   amount: string;
   currency: string;
   lockedFxRate?: string;
-  description: string;
+  description?: string;
 }
 
 const GENESIS_HASH = 'NOVAPAY_GENESIS_0000';
@@ -82,7 +82,7 @@ export async function writeEntries(entries: LedgerEntryInput[]): Promise<void> {
         amount:        entry.amount,
         currency:      entry.currency,
         lockedFxRate:  entry.lockedFxRate ?? null,
-        description:   entry.description,
+        description:   entry.description ?? `${entry.entryType}: ${entry.amount} ${entry.currency}`,
         previousHash,
         entryHash,
         createdAt: now,

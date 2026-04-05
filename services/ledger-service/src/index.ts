@@ -19,7 +19,7 @@ app.use('*', async (c, next) => {
 
 app.get('/health', (c) => c.json({ status: 'ok', service: 'ledger-service' }));
 app.get('/metrics', async (c) => c.text(await register.metrics(), 200, { 'Content-Type': register.contentType }));
-app.route('/', ledgerRoutes);
+app.route('/ledger', ledgerRoutes);
 
 export default {
   port: process.env.PORT || 3000,
