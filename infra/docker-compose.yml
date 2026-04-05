@@ -3,7 +3,7 @@ version: '3.9'
 x-app-env: &app-env
   MASTER_ENCRYPTION_KEY: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
   REDIS_URL: redis://redis:6379
-  JAEGER_ENDPOINT: http://jaeger:14268/api/traces
+  JAEGER_ENDPOINT: http://jaeger:4318/v1/traces
   ACCOUNT_SERVICE_URL: http://account-service:3001
   TRANSACTION_SERVICE_URL: http://transaction-service:3002
   LEDGER_SERVICE_URL: http://ledger-service:3003
