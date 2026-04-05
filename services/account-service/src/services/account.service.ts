@@ -77,7 +77,8 @@ export async function createWallet(
       .returning();
     return wallet;
   } catch (err: any) {
-    if (err?.code === '23505') throw new WalletAlreadyExistsError(userId);
+    const pgCode = err?.code ?? err?.cause?.code;
+    if (pgCode === '23505') throw new WalletAlreadyExistsError(userId);
     throw err;
   }
 }
