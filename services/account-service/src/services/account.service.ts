@@ -26,6 +26,13 @@ export class WalletNotFoundError extends Error {
   }
 }
 
+export class WalletAlreadyExistsError extends Error {
+  constructor(userId: string) {
+    super(`Wallet already exists for user ${userId}`);
+    this.name = 'WalletAlreadyExistsError';
+  }
+}
+
 // ── AES-256-GCM helpers ───────────────────────────────────────────────────────
 
 async function importKey(): Promise<CryptoKey> {
@@ -63,11 +70,16 @@ export async function createWallet(
   accountRef?: object,
 ) {
   const encryptedAccountRef = accountRef ? await encryptJson(accountRef) : null;
-  const [wallet] = await db
-    .insert(wallets)
-    .values({ userId, currency, encryptedAccountRef })
-    .returning();
-  return wallet;
+  try {
+    const [wallet] = await db
+      .insert(wallets)
+      .values({ userId, currency, encryptedAccountRef })
+      .returning();
+    return wallet;
+  } catch (err: any) {
+    if (err?.code === '23505') throw new WalletAlreadyExistsError(userId);
+    throw err;
+  }
 }
 
 export async function getWallet(userId: string) {

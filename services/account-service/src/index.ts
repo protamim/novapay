@@ -5,7 +5,7 @@ import { requestId } from 'hono/request-id';
 import { register, httpDuration } from './metrics';
 import accountRoutes from './routes/account.routes';
 
-const app = new Hono();
+const app = new Hono().basePath("/api");
 app.use('*', requestId());
 app.use('*', logger());
 app.use('*', async (c, next) => {

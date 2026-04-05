@@ -3,6 +3,7 @@ import { trace } from '@opentelemetry/api';
 import {
   ConcurrentModificationError,
   InsufficientFundsError,
+  WalletAlreadyExistsError,
   WalletNotFoundError,
   createWallet,
   creditWallet,
@@ -25,8 +26,13 @@ accounts.post('/accounts', async (c) => {
   const span = trace.getActiveSpan();
   span?.setAttributes({ requestId: c.req.header('x-request-id') ?? '', userId: body.userId });
 
-  const wallet = await createWallet(body.userId, body.currency, body.accountRef);
-  return c.json(wallet, 201);
+  try {
+    const wallet = await createWallet(body.userId, body.currency, body.accountRef);
+    return c.json(wallet, 201);
+  } catch (err) {
+    if (err instanceof WalletAlreadyExistsError) return c.json({ error: err.message }, 409);
+    throw err;
+  }
 });
 
 accounts.get('/accounts/:userId', async (c) => {
