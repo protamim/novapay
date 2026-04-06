@@ -13,6 +13,36 @@
       "description": "API Gateway base URL (Nginx). Default after docker compose up."
     },
     {
+      "key": "accountServiceUrl",
+      "value": "http://localhost:3001",
+      "type": "string",
+      "description": "Direct account-service URL (bypasses nginx). Health check only."
+    },
+    {
+      "key": "transactionServiceUrl",
+      "value": "http://localhost:3002",
+      "type": "string",
+      "description": "Direct transaction-service URL (bypasses nginx). Health check only."
+    },
+    {
+      "key": "ledgerServiceUrl",
+      "value": "http://localhost:3003",
+      "type": "string",
+      "description": "Direct ledger-service URL (bypasses nginx). Health check only."
+    },
+    {
+      "key": "fxServiceUrl",
+      "value": "http://localhost:3004",
+      "type": "string",
+      "description": "Direct fx-service URL (bypasses nginx). Health check only."
+    },
+    {
+      "key": "payrollServiceUrl",
+      "value": "http://localhost:3005",
+      "type": "string",
+      "description": "Direct payroll-service URL (bypasses nginx). Health check only."
+    },
+    {
       "key": "adminKey",
       "value": "secret-admin-key",
       "type": "string",
@@ -193,11 +223,11 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/health",
-              "host": ["{{baseUrl}}"],
+              "raw": "{{accountServiceUrl}}/api/health",
+              "host": ["{{accountServiceUrl}}"],
               "path": ["api", "health"]
             },
-            "description": "Returns { status: 'ok', service: 'account-service' }"
+            "description": "Direct health check (bypasses nginx — nginx has no route to /health). Returns { status: 'ok', service: 'account-service' }. Use GET {{baseUrl}}/api/admin/health for an aggregate check via gateway."
           },
           "response": []
         }
@@ -241,7 +271,7 @@
                 }
               }
             },
-            "description": "Initiate a domestic transfer between two wallets. The saga: debit sender → record DEBIT_COMPLETE → credit recipient → record COMPLETED. Recovery worker handles partial failures."
+            "description": "Initiate a domestic transfer between two wallets. A flat $2.00 fee is applied — sender is debited (amount + $2.00). The saga: debit sender (amount + fee) → record DEBIT_COMPLETE → credit recipient (amount) → write balanced ledger entries (transfer pair + fee pair) → record COMPLETED. Response includes a `fee` field. Recovery worker handles partial failures."
           },
           "response": [],
           "event": [
@@ -293,7 +323,7 @@
                 }
               }
             },
-            "description": "Initiate a cross-currency transfer. Requires a valid (non-expired, unconsumed) fxQuoteId from the FX service. The locked rate is written to every ledger entry."
+            "description": "Initiate a cross-currency transfer. Requires a valid (non-expired, unconsumed) fxQuoteId from the FX service. A flat $2.00 fee is applied — sender is debited (amount + $2.00). The locked rate is written to every ledger entry. Response includes a `fee` field."
           },
           "response": [],
           "event": [
@@ -386,11 +416,11 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/health",
-              "host": ["{{baseUrl}}"],
+              "raw": "{{transactionServiceUrl}}/api/health",
+              "host": ["{{transactionServiceUrl}}"],
               "path": ["api", "health"]
             },
-            "description": "Returns { status: 'ok', service: 'transaction-service' }"
+            "description": "Direct health check (bypasses nginx). Returns { status: 'ok', service: 'transaction-service' }."
           },
           "response": []
         }
@@ -433,7 +463,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"entries\": [\n    {\n      \"transactionId\": \"{{transactionId}}\",\n      \"accountId\": \"{{userId}}\",\n      \"amount\": \"100.00\",\n      \"entryType\": \"DEBIT\",\n      \"currency\": \"USD\",\n      \"lockedFxRate\": null\n    },\n    {\n      \"transactionId\": \"{{transactionId}}\",\n      \"accountId\": \"{{recipientId}}\",\n      \"amount\": \"100.00\",\n      \"entryType\": \"CREDIT\",\n      \"currency\": \"USD\",\n      \"lockedFxRate\": null\n    }\n  ]\n}",
+              "raw": "{\n  \"entries\": [\n    {\n      \"transactionId\": \"{{transactionId}}\",\n      \"accountId\": \"{{userId}}\",\n      \"amount\": \"100.00\",\n      \"entryType\": \"DEBIT\",\n      \"currency\": \"USD\"\n    },\n    {\n      \"transactionId\": \"{{transactionId}}\",\n      \"accountId\": \"{{recipientId}}\",\n      \"amount\": \"100.00\",\n      \"entryType\": \"CREDIT\",\n      \"currency\": \"USD\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -510,11 +540,11 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/health",
-              "host": ["{{baseUrl}}"],
+              "raw": "{{ledgerServiceUrl}}/api/health",
+              "host": ["{{ledgerServiceUrl}}"],
               "path": ["api", "health"]
             },
-            "description": "Returns { status: 'ok', service: 'ledger-service' }"
+            "description": "Direct health check (bypasses nginx). Returns { status: 'ok', service: 'ledger-service' }."
           },
           "response": []
         }
@@ -626,11 +656,11 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/health",
-              "host": ["{{baseUrl}}"],
+              "raw": "{{fxServiceUrl}}/api/health",
+              "host": ["{{fxServiceUrl}}"],
               "path": ["api", "health"]
             },
-            "description": "Returns { status: 'ok', service: 'fx-service' }"
+            "description": "Direct health check (bypasses nginx). Returns { status: 'ok', service: 'fx-service' }."
           },
           "response": []
         }
@@ -777,11 +807,11 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/health",
-              "host": ["{{baseUrl}}"],
+              "raw": "{{payrollServiceUrl}}/api/health",
+              "host": ["{{payrollServiceUrl}}"],
               "path": ["api", "health"]
             },
-            "description": "Returns { status: 'ok', service: 'payroll-service' }"
+            "description": "Direct health check (bypasses nginx). Returns { status: 'ok', service: 'payroll-service' }."
           },
           "response": []
         }
@@ -803,9 +833,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/health",
+              "raw": "{{baseUrl}}/api/admin/health",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "health"]
+              "path": ["api", "admin", "health"]
             },
             "description": "Check health of all downstream services. Returns 200 if all healthy, 207 Multi-Status if any are degraded."
           },
@@ -933,7 +963,7 @@
           "response": []
         },
         {
-          "name": "Health Check",
+          "name": "Health Check (alias)",
           "request": {
             "method": "GET",
             "header": [
@@ -944,11 +974,11 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/health",
+              "raw": "{{baseUrl}}/api/admin/health",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "health"]
+              "path": ["api", "admin", "health"]
             },
-            "description": "Returns { status: 'ok' | 'degraded', services: { ... } }"
+            "description": "Same as Aggregate Health Check above. Returns { status: 'ok' | 'degraded', services: { ... } }"
           },
           "response": []
         }
