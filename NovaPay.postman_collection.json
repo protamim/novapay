@@ -402,6 +402,17 @@
       "item": [
         {
           "name": "Create Ledger Entries",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.variables.set('transactionId', 'txn-' + pm.variables.replaceIn('{{$guid}}'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -422,7 +433,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"entries\": [\n    {\n      \"transactionId\": \"txn-001\",\n      \"accountId\": \"{{userId}}\",\n      \"amount\": \"100.00\",\n      \"entryType\": \"DEBIT\",\n      \"currency\": \"USD\",\n      \"lockedFxRate\": null\n    },\n    {\n      \"transactionId\": \"txn-001\",\n      \"accountId\": \"{{recipientId}}\",\n      \"amount\": \"100.00\",\n      \"entryType\": \"CREDIT\",\n      \"currency\": \"USD\",\n      \"lockedFxRate\": null\n    }\n  ]\n}",
+              "raw": "{\n  \"entries\": [\n    {\n      \"transactionId\": \"{{transactionId}}\",\n      \"accountId\": \"{{userId}}\",\n      \"amount\": \"100.00\",\n      \"entryType\": \"DEBIT\",\n      \"currency\": \"USD\",\n      \"lockedFxRate\": null\n    },\n    {\n      \"transactionId\": \"{{transactionId}}\",\n      \"accountId\": \"{{recipientId}}\",\n      \"amount\": \"100.00\",\n      \"entryType\": \"CREDIT\",\n      \"currency\": \"USD\",\n      \"lockedFxRate\": null\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"

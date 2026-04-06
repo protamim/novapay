@@ -149,6 +149,35 @@ async function reverseDebit(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ transactionId, amount, currency, isReversal: true }),
   });
+
+  // Write a compensating balanced ledger entry so the ledger stays consistent.
+  // The forward debit was already written; this credit reverses it.
+  // REVERSAL_SUSPENSE is a system account that absorbs the offsetting debit.
+  await fetch(`${LEDGER_SERVICE_URL}/ledger/entries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      entries: [
+        {
+          transactionId,
+          accountId,
+          entryType: 'CREDIT',
+          amount,
+          currency,
+          description: `REVERSAL credit: ${amount} ${currency}`,
+        },
+        {
+          transactionId,
+          accountId: 'REVERSAL_SUSPENSE',
+          entryType: 'DEBIT',
+          amount,
+          currency,
+          description: `REVERSAL suspense debit: ${amount} ${currency}`,
+        },
+      ],
+    }),
+  });
+
   await db.update(transactions)
     .set({ status: 'REVERSED', failureReason: 'Reversal after failed credit', updatedAt: new Date() })
     .where(eq(transactions.id, transactionId));
