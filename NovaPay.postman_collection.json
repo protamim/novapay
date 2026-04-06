@@ -1,0 +1,1251 @@
+{
+  "info": {
+    "name": "NovaPay API",
+    "description": "Complete Postman collection for NovaPay — a microservice payment backend with idempotent disbursement, atomic double-entry ledger, locked FX quotes, and pre-computed transaction history.\n\n**Setup:**\n1. Set the `baseUrl` variable to `http://localhost` (default after `docker compose up`)\n2. Set `adminKey` to match your `ADMIN_API_KEY` env var\n3. All monetary amounts must be strings (e.g. `\"100.00\"`), never JS floats\n\n**Key rules:**\n- `POST /transfers` and `POST /transfers/international` require a unique `Idempotency-Key` UUID per request\n- FX quotes expire after 60 seconds and are single-use\n- Admin endpoints require the `X-Admin-Key` header",
+    "_postman_id": "novapay-collection-v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost",
+      "type": "string",
+      "description": "API Gateway base URL (Nginx). Default after docker compose up."
+    },
+    {
+      "key": "adminKey",
+      "value": "secret-admin-key",
+      "type": "string",
+      "description": "Admin API key — must match ADMIN_API_KEY env var in admin-service"
+    },
+    {
+      "key": "userId",
+      "value": "user-001",
+      "type": "string",
+      "description": "Sample user/account ID for account-service requests"
+    },
+    {
+      "key": "recipientId",
+      "value": "user-002",
+      "type": "string",
+      "description": "Sample recipient ID for transfer requests"
+    },
+    {
+      "key": "transactionId",
+      "value": "",
+      "type": "string",
+      "description": "Populated by test scripts from transfer responses"
+    },
+    {
+      "key": "fxQuoteId",
+      "value": "",
+      "type": "string",
+      "description": "Populated by test scripts from FX quote responses"
+    },
+    {
+      "key": "jobId",
+      "value": "",
+      "type": "string",
+      "description": "Populated by test scripts from payroll job responses"
+    }
+  ],
+  "item": [
+    {
+      "name": "Account Service",
+      "description": "Wallet CRUD, debit/credit operations with optimistic locking and AES-256-GCM field encryption.",
+      "item": [
+        {
+          "name": "Create Wallet",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional — auto-generated if omitted"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "accounts"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"currency\": \"USD\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a new wallet for a user. Returns 409 if a wallet already exists for the userId."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    if (body.userId) pm.collectionVariables.set('userId', body.userId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Wallet",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "accounts", "{{userId}}"]
+            },
+            "description": "Retrieve a wallet by userId. Returns 404 if not found."
+          },
+          "response": []
+        },
+        {
+          "name": "Debit Wallet",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts/{{userId}}/debit",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "accounts", "{{userId}}", "debit"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"50.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Debit an amount from the wallet. Amount must be a decimal string. Returns 402 on insufficient funds, 409 on concurrent modification."
+          },
+          "response": []
+        },
+        {
+          "name": "Credit Wallet",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts/{{userId}}/credit",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "accounts", "{{userId}}", "credit"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"100.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Credit an amount to the wallet. Amount must be a decimal string. Returns 409 on concurrent modification."
+          },
+          "response": []
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Returns { status: 'ok', service: 'account-service' }"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Transaction Service",
+      "description": "Transfer saga engine with idempotency middleware, saga recovery worker, and stuck transaction detection.",
+      "item": [
+        {
+          "name": "Domestic Transfer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "REQUIRED — unique UUID per logical operation. Reusing with same payload returns cached result; reusing with different payload returns 409."
+              },
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/transfers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "transfers"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"senderId\": \"{{userId}}\",\n  \"recipientId\": \"{{recipientId}}\",\n  \"amount\": \"25.00\",\n  \"currency\": \"USD\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Initiate a domestic transfer between two wallets. The saga: debit sender → record DEBIT_COMPLETE → credit recipient → record COMPLETED. Recovery worker handles partial failures."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    if (body.transactionId) pm.collectionVariables.set('transactionId', body.transactionId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "International Transfer (FX)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "REQUIRED — unique UUID per logical operation."
+              },
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/transfers/international",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "transfers", "international"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"senderId\": \"{{userId}}\",\n  \"recipientId\": \"{{recipientId}}\",\n  \"amount\": \"100.00\",\n  \"currency\": \"USD\",\n  \"fxQuoteId\": \"{{fxQuoteId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Initiate a cross-currency transfer. Requires a valid (non-expired, unconsumed) fxQuoteId from the FX service. The locked rate is written to every ledger entry."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    if (body.transactionId) pm.collectionVariables.set('transactionId', body.transactionId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Transaction",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/transfers/{{transactionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "transfers", "{{transactionId}}"]
+            },
+            "description": "Retrieve a transaction by ID. Status flow: PENDING → PROCESSING → COMPLETED | FAILED | REVERSED."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Stuck Transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/transfers/stuck",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "transfers", "stuck"]
+            },
+            "description": "Returns transactions in PROCESSING status for more than 2 minutes. Used for saga recovery monitoring."
+          },
+          "response": []
+        },
+        {
+          "name": "Reverse Transaction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/transfers/{{transactionId}}/reverse",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "transfers", "{{transactionId}}", "reverse"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Manually reverse a transaction. Only valid for transactions in PROCESSING status. Returns 409 if transaction is not reversible."
+          },
+          "response": []
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Returns { status: 'ok', service: 'transaction-service' }"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Ledger Service",
+      "description": "Double-entry bookkeeping with SHA-256 audit hash chain and invariant checks. All entries must balance: sum(DEBIT) === sum(CREDIT).",
+      "item": [
+        {
+          "name": "Create Ledger Entries",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/ledger/entries",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ledger", "entries"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entries\": [\n    {\n      \"transactionId\": \"txn-001\",\n      \"accountId\": \"{{userId}}\",\n      \"amount\": \"100.00\",\n      \"direction\": \"DEBIT\"\n    },\n    {\n      \"transactionId\": \"txn-001\",\n      \"accountId\": \"{{recipientId}}\",\n      \"amount\": \"100.00\",\n      \"direction\": \"CREDIT\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Record double-entry bookkeeping entries. DEBIT totals must equal CREDIT totals (validated with decimal.js). Returns 422 on imbalance — no partial writes."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Account Balance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/ledger/balance/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ledger", "balance", "{{userId}}"]
+            },
+            "description": "Get the computed ledger balance for an account. Derived from the sum of all debit/credit entries."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Transaction Hash Chain",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/ledger/verify/{{transactionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ledger", "verify", "{{transactionId}}"]
+            },
+            "description": "Recompute and verify the SHA-256 audit hash chain for a transaction. Any DB-level tamper breaks the chain. Genesis entry uses sentinel NOVAPAY_GENESIS_0000."
+          },
+          "response": []
+        },
+        {
+          "name": "Invariant Check",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/ledger/invariant-check",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ledger", "invariant-check"]
+            },
+            "description": "Check global ledger invariant: total DEBITs must equal total CREDITs. Prometheus counter ledger_invariant_violation_total fires an alert at > 0."
+          },
+          "response": []
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Returns { status: 'ok', service: 'ledger-service' }"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "FX Service",
+      "description": "FX quote lifecycle — 60-second TTL, single-use atomic consumption, locked rate on ledger. No fallback to stale/cached rates.",
+      "item": [
+        {
+          "name": "Create FX Quote",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fx/quote",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "fx", "quote"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromCurrency\": \"USD\",\n  \"toCurrency\": \"EUR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Request an FX rate quote. Quote is valid for 60 seconds and can only be used once. Returns 503 if FX provider is unavailable — no cached fallback."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    if (body.quoteId) pm.collectionVariables.set('fxQuoteId', body.quoteId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get FX Quote",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fx/quote/{{fxQuoteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "fx", "quote", "{{fxQuoteId}}"]
+            },
+            "description": "Retrieve an FX quote by ID. Returns computed fields: isExpired, isUsed, secondsRemaining. Returns 400 on invalid UUID, 404 if not found."
+          },
+          "response": []
+        },
+        {
+          "name": "Consume FX Quote",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fx/quote/{{fxQuoteId}}/consume",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "fx", "quote", "{{fxQuoteId}}", "consume"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Atomically consume an FX quote (UPDATE … WHERE usedAt IS NULL RETURNING). Returns 422 QUOTE_ALREADY_USED or 422 QUOTE_EXPIRED. Race-condition safe."
+          },
+          "response": []
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Returns { status: 'ok', service: 'fx-service' }"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Payroll Service",
+      "description": "Bulk disbursements with Redis per-employer queue, checkpoint resumability, and deterministic idempotency keys.",
+      "item": [
+        {
+          "name": "Create Payroll Job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/payroll/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payroll", "jobs"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employerId\": \"employer-001\",\n  \"disbursements\": [\n    {\n      \"employeeId\": \"employee-001\",\n      \"amount\": \"3500.00\",\n      \"currency\": \"USD\"\n    },\n    {\n      \"employeeId\": \"employee-002\",\n      \"amount\": \"4200.00\",\n      \"currency\": \"USD\"\n    },\n    {\n      \"employeeId\": \"employee-003\",\n      \"amount\": \"2800.00\",\n      \"currency\": \"USD\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create and enqueue a bulk payroll disbursement job. Returns 202 Accepted — processing is async. Crash recovery resumes from checkpointIndex. Idempotency keys are deterministic: {jobId}-{employeeId}-{index}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 202) {",
+                  "    const body = pm.response.json();",
+                  "    if (body.jobId) pm.collectionVariables.set('jobId', body.jobId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Payroll Job",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/payroll/jobs/{{jobId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payroll", "jobs", "{{jobId}}"]
+            },
+            "description": "Get payroll job status including processedCount, failedCount, and checkpointIndex for crash recovery visibility."
+          },
+          "response": []
+        },
+        {
+          "name": "List Payroll Jobs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/payroll/jobs?limit=20&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payroll", "jobs"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Max results (default 50, max 200)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Pagination offset (default 0)"
+                }
+              ]
+            },
+            "description": "List all payroll jobs with pagination."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Job Disbursements",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-request-id",
+                "value": "{{$guid}}",
+                "description": "Optional"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/payroll/jobs/{{jobId}}/disbursements?limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payroll", "jobs", "{{jobId}}", "disbursements"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Max results (default 50, max 200)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Pagination offset (default 0)"
+                }
+              ]
+            },
+            "description": "List individual disbursement records for a payroll job with pagination."
+          },
+          "response": []
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Returns { status: 'ok', service: 'payroll-service' }"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin Service",
+      "description": "Internal proxy for operations requiring elevated access. All routes require the X-Admin-Key header matching ADMIN_API_KEY env var.",
+      "item": [
+        {
+          "name": "Aggregate Health Check",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}",
+                "description": "REQUIRED — must match ADMIN_API_KEY env var"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Check health of all downstream services. Returns 200 if all healthy, 207 Multi-Status if any are degraded."
+          },
+          "response": []
+        },
+        {
+          "name": "Ledger Invariant Check",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}",
+                "description": "REQUIRED"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/ledger/invariant",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "ledger", "invariant"]
+            },
+            "description": "Proxy to ledger-service invariant check. Verifies global double-entry balance integrity."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Ledger Hash Chain",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}",
+                "description": "REQUIRED"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/ledger/verify/{{transactionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "ledger", "verify", "{{transactionId}}"]
+            },
+            "description": "Proxy to ledger-service hash chain verification for a specific transaction."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Stuck Transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}",
+                "description": "REQUIRED"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/transactions/stuck",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "transactions", "stuck"]
+            },
+            "description": "Proxy to transaction-service stuck transaction detection. Returns PROCESSING transactions older than 2 minutes."
+          },
+          "response": []
+        },
+        {
+          "name": "Reverse Transaction (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}",
+                "description": "REQUIRED"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/transactions/{{transactionId}}/reverse",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "transactions", "{{transactionId}}", "reverse"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Admin proxy to reverse a transaction. Proxied to transaction-service. Only works on PROCESSING transactions."
+          },
+          "response": []
+        },
+        {
+          "name": "List Payroll Jobs (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}",
+                "description": "REQUIRED"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/payroll/jobs?limit=20&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "payroll", "jobs"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Optional"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Optional"
+                }
+              ]
+            },
+            "description": "Admin proxy to list all payroll jobs from payroll-service."
+          },
+          "response": []
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}",
+                "description": "REQUIRED"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Returns { status: 'ok' | 'degraded', services: { ... } }"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Flows",
+      "description": "End-to-end request sequences demonstrating the key NovaPay scenarios. Run these folders in order to exercise full flows.",
+      "item": [
+        {
+          "name": "Domestic Transfer Flow",
+          "description": "1. Create sender wallet → 2. Create recipient wallet → 3. Credit sender → 4. Initiate transfer → 5. Get transaction status",
+          "item": [
+            {
+              "name": "1. Create Sender Wallet",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/accounts",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "accounts"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"userId\": \"sender-{{$randomInt}}\",\n  \"currency\": \"USD\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    pm.collectionVariables.set('userId', pm.response.json().userId);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "2. Create Recipient Wallet",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/accounts",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "accounts"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"userId\": \"recipient-{{$randomInt}}\",\n  \"currency\": \"USD\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    pm.collectionVariables.set('recipientId', pm.response.json().userId);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3. Fund Sender Wallet",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/accounts/{{userId}}/credit",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "accounts", "{{userId}}", "credit"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"amount\": \"500.00\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "4. Initiate Transfer",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "Idempotency-Key", "value": "{{$guid}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/transfers",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "transfers"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"senderId\": \"{{userId}}\",\n  \"recipientId\": \"{{recipientId}}\",\n  \"amount\": \"100.00\",\n  \"currency\": \"USD\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    pm.collectionVariables.set('transactionId', pm.response.json().transactionId);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "5. Check Transaction Status",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/transfers/{{transactionId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "transfers", "{{transactionId}}"]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "FX Transfer Flow",
+          "description": "1. Create FX quote → 2. Check quote → 3. Initiate international transfer (quote consumed atomically)",
+          "item": [
+            {
+              "name": "1. Get FX Quote",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/fx/quote",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "fx", "quote"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fromCurrency\": \"USD\",\n  \"toCurrency\": \"EUR\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    pm.collectionVariables.set('fxQuoteId', pm.response.json().quoteId);",
+                      "    console.log('Quote expires in 60s. Proceed quickly!');",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "2. Verify Quote (optional)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/fx/quote/{{fxQuoteId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "fx", "quote", "{{fxQuoteId}}"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "3. International Transfer",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "Idempotency-Key", "value": "{{$guid}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/transfers/international",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "transfers", "international"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"senderId\": \"{{userId}}\",\n  \"recipientId\": \"{{recipientId}}\",\n  \"amount\": \"200.00\",\n  \"currency\": \"USD\",\n  \"fxQuoteId\": \"{{fxQuoteId}}\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    pm.collectionVariables.set('transactionId', pm.response.json().transactionId);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Idempotency Demo",
+          "description": "Demonstrates idempotency behavior: send the same request twice with the same Idempotency-Key. The second call must return the cached result, not create a new transaction.",
+          "item": [
+            {
+              "name": "Transfer (first attempt)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "Idempotency-Key", "value": "demo-idem-key-fixed-001" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/transfers",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "transfers"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"senderId\": \"{{userId}}\",\n  \"recipientId\": \"{{recipientId}}\",\n  \"amount\": \"10.00\",\n  \"currency\": \"USD\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "description": "First attempt — creates the transaction. Note the fixed Idempotency-Key."
+              },
+              "response": []
+            },
+            {
+              "name": "Transfer (duplicate — should return cached)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "Idempotency-Key", "value": "demo-idem-key-fixed-001" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/transfers",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "transfers"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"senderId\": \"{{userId}}\",\n  \"recipientId\": \"{{recipientId}}\",\n  \"amount\": \"10.00\",\n  \"currency\": \"USD\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "description": "Exact duplicate — same key, same payload. Should return the same transactionId from cache. No new transaction created."
+              },
+              "response": []
+            },
+            {
+              "name": "Transfer (conflict — should return 409)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "Idempotency-Key", "value": "demo-idem-key-fixed-001" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/transfers",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "transfers"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"senderId\": \"{{userId}}\",\n  \"recipientId\": \"{{recipientId}}\",\n  \"amount\": \"99.00\",\n  \"currency\": \"USD\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "description": "Same key, DIFFERENT payload (amount changed to 99.00). Should return 409 IDEMPOTENCY_CONFLICT."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -244,7 +244,7 @@ Content-Type: application/json
   "recipientId": "user-2",
   "amount": "2000",
   "currency": "USD",
-  "fxQuoteId": "f7e6d5c4-..."
+  "fxQuoteId": "ca597ba5-e966-460a-b904-c1ace0edb2df"
 }
 ```
 
