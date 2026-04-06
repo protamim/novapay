@@ -91,7 +91,7 @@ accounts.post("/accounts/:userId/debit", async (c) => {
 });
 
 accounts.post("/accounts/:userId/credit", async (c) => {
-  let body: { amount: string };
+  let body: { amount: string; transactionId?: string; currency?: string; isReversal?: boolean };
   try {
     body = await c.req.json();
   } catch {
@@ -107,7 +107,46 @@ accounts.post("/accounts/:userId/credit", async (c) => {
   });
 
   try {
-    const newBalance = await creditWallet(c.req.param("userId"), body.amount);
+    const userId = c.req.param("userId");
+    const newBalance = await creditWallet(userId, body.amount);
+
+    // Write a balanced ledger entry for direct credits (no transactionId) so
+    // the ledger balance stays in sync with the wallet balance, including initial
+    // funding. Saga transfers (transactionId set) and reversals (isReversal=true)
+    // have their ledger entries written by transaction-service — skip those here.
+    const LEDGER_SERVICE_URL = process.env.LEDGER_SERVICE_URL ?? "http://ledger-service:3000";
+    const isDirectCredit = !body.transactionId && !body.isReversal;
+    if (isDirectCredit) {
+      const txnId = `funding-${userId}-${Date.now()}`;
+      const currency = body.currency ?? "USD";
+      await fetch(`${LEDGER_SERVICE_URL}/ledger/entries`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entries: [
+            {
+              transactionId: txnId,
+              accountId: "FUNDING_SOURCE",
+              entryType: "DEBIT",
+              amount: body.amount,
+              currency,
+              description: `Funding source debit: ${body.amount} ${currency}`,
+            },
+            {
+              transactionId: txnId,
+              accountId: userId,
+              entryType: "CREDIT",
+              amount: body.amount,
+              currency,
+              description: `FUNDING credit: ${body.amount} ${currency}`,
+            },
+          ],
+        }),
+      }).catch(() => {
+        // Ledger write is best-effort for direct credits; wallet credit already succeeded
+      });
+    }
+
     return c.json({ balance: newBalance });
   } catch (err) {
     if (err instanceof WalletNotFoundError)

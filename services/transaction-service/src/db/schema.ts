@@ -12,6 +12,7 @@ export const transactions = pgTable('transactions', {
   currency:       text('currency').notNull(),
   fxQuoteId:      text('fx_quote_id'),
   lockedFxRate:   numeric('locked_fx_rate', { precision: 20, scale: 8 }),
+  fee:            numeric('fee', { precision: 20, scale: 8 }).notNull().default('2'),
   processingStep: text('processing_step'), // 'DEBIT_COMPLETE' | 'CREDIT_COMPLETE'
   failureReason:  text('failure_reason'),
   result:         text('result'), // JSON stringified final response

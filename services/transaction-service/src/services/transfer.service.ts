@@ -1,8 +1,12 @@
+import Decimal from 'decimal.js';
 import { eq } from 'drizzle-orm';
 import { trace } from '@opentelemetry/api';
 import { db } from '../db';
 import { transactions } from '../db/schema';
 import { transactionsTotal } from '../metrics';
+
+const NOVAPAY_FEE_ACCT = 'novapay_fee_acct';
+const TRANSFER_FEE     = new Decimal('2'); // $2 flat fee per transfer
 
 const ACCOUNT_SERVICE_URL = process.env.ACCOUNT_SERVICE_URL ?? 'http://account-service:3000';
 const FX_SERVICE_URL      = process.env.FX_SERVICE_URL      ?? 'http://fx-service:3000';
@@ -22,6 +26,7 @@ interface TransferResult {
   transactionId: string;
   status: string;
   amount: string;
+  fee: string;
   currency: string;
 }
 
@@ -34,11 +39,14 @@ export async function executeTransfer(
   const span = trace.getActiveSpan();
   span?.setAttributes({ requestId: txnRecord.idempotencyKey, userId: body.senderId, transactionId });
 
-  // Step 1: Debit sender
+  const fee = TRANSFER_FEE;
+  const totalDebit = new Decimal(body.amount).plus(fee).toFixed(8);
+
+  // Step 1: Debit sender (transfer amount + fee)
   const debitRes = await fetch(`${ACCOUNT_SERVICE_URL}/accounts/${body.senderId}/debit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ transactionId, amount: body.amount, currency: body.currency }),
+    body: JSON.stringify({ transactionId, amount: totalDebit, currency: body.currency }),
   });
   if (!debitRes.ok) {
     const errBody = await debitRes.json().catch(() => ({})) as Record<string, unknown>;
@@ -90,7 +98,9 @@ export async function executeTransfer(
     throw new Error('Credit failed');
   }
 
-  // Step 5: Write balanced ledger entries (DEBIT sender + CREDIT recipient)
+  // Step 5: Write two balanced ledger entry pairs:
+  //   Pair A — transfer:  DEBIT sender $amount      + CREDIT recipient $amount
+  //   Pair B — fee:       DEBIT sender $fee          + CREDIT novapay_fee_acct $fee
   await fetch(`${LEDGER_SERVICE_URL}/ledger/entries`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -103,6 +113,7 @@ export async function executeTransfer(
           amount: body.amount,
           currency: body.currency,
           lockedFxRate,
+          description: `Transfer debit: ${body.amount} ${body.currency}`,
         },
         {
           transactionId,
@@ -111,6 +122,23 @@ export async function executeTransfer(
           amount: body.amount,
           currency: body.currency,
           lockedFxRate,
+          description: `Transfer credit: ${body.amount} ${body.currency}`,
+        },
+        {
+          transactionId,
+          accountId: body.senderId,
+          entryType: 'DEBIT',
+          amount: fee.toFixed(8),
+          currency: body.currency,
+          description: `Fee debit: ${fee.toFixed(8)} ${body.currency}`,
+        },
+        {
+          transactionId,
+          accountId: NOVAPAY_FEE_ACCT,
+          entryType: 'CREDIT',
+          amount: fee.toFixed(8),
+          currency: body.currency,
+          description: `Fee credit: ${fee.toFixed(8)} ${body.currency}`,
         },
       ],
     }),
@@ -121,6 +149,7 @@ export async function executeTransfer(
     transactionId,
     status: 'COMPLETED',
     amount: body.amount,
+    fee: fee.toFixed(8),
     currency: body.currency,
   };
 
@@ -144,15 +173,18 @@ async function reverseDebit(
   amount: string,
   currency: string,
 ): Promise<void> {
+  // The forward debit charged amount + fee; refund the full amount to the sender.
+  const totalRefund = new Decimal(amount).plus(TRANSFER_FEE).toFixed(8);
+
   await fetch(`${ACCOUNT_SERVICE_URL}/accounts/${accountId}/credit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ transactionId, amount, currency, isReversal: true }),
+    body: JSON.stringify({ transactionId, amount: totalRefund, currency, isReversal: true }),
   });
 
-  // Write a compensating balanced ledger entry so the ledger stays consistent.
-  // The forward debit was already written; this credit reverses it.
-  // REVERSAL_SUSPENSE is a system account that absorbs the offsetting debit.
+  // Write compensating ledger entries. The forward debit wrote two DEBIT entries
+  // (transfer + fee) against the sender. Reverse both with matching CREDITs.
+  // REVERSAL_SUSPENSE absorbs the offsetting DEBITs to keep the ledger balanced.
   await fetch(`${LEDGER_SERVICE_URL}/ledger/entries`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -164,7 +196,7 @@ async function reverseDebit(
           entryType: 'CREDIT',
           amount,
           currency,
-          description: `REVERSAL credit: ${amount} ${currency}`,
+          description: `REVERSAL transfer credit: ${amount} ${currency}`,
         },
         {
           transactionId,
@@ -173,6 +205,22 @@ async function reverseDebit(
           amount,
           currency,
           description: `REVERSAL suspense debit: ${amount} ${currency}`,
+        },
+        {
+          transactionId,
+          accountId,
+          entryType: 'CREDIT',
+          amount: TRANSFER_FEE.toFixed(8),
+          currency,
+          description: `REVERSAL fee credit: ${TRANSFER_FEE.toFixed(8)} ${currency}`,
+        },
+        {
+          transactionId,
+          accountId: 'REVERSAL_SUSPENSE',
+          entryType: 'DEBIT',
+          amount: TRANSFER_FEE.toFixed(8),
+          currency,
+          description: `REVERSAL fee suspense debit: ${TRANSFER_FEE.toFixed(8)} ${currency}`,
         },
       ],
     }),
