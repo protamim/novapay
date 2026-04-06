@@ -20,7 +20,8 @@
     "@opentelemetry/exporter-trace-otlp-http": "latest",
     "@opentelemetry/resources": "latest",
     "@opentelemetry/semantic-conventions": "latest",
-    "pino": "latest"
+    "pino": "latest",
+    "zod": "latest"
   },
   "devDependencies": {
     "drizzle-kit": "latest",

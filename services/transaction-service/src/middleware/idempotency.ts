@@ -1,9 +1,18 @@
 import { createMiddleware } from 'hono/factory';
+import { z } from 'zod';
 import { db } from '../db';
 import { transactions } from '../db/schema';
 import { eq } from 'drizzle-orm';
 
 type TransactionType = 'TRANSFER' | 'FX_TRANSFER';
+
+const TransferBodySchema = z.object({
+  senderId: z.string().min(1),
+  recipientId: z.string().min(1),
+  amount: z.string().min(1),
+  currency: z.string().min(1),
+  fxQuoteId: z.string().optional(),
+});
 
 async function sha256(data: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(data));
@@ -19,13 +28,18 @@ export const idempotency = (type: TransactionType) =>
       return c.json({ error: 'Idempotency-Key header is required' }, 400);
     }
 
-    const body = await c.req.json<{
-      senderId: string;
-      recipientId: string;
-      amount: string;
-      currency: string;
-      fxQuoteId?: string;
-    }>();
+    let raw: unknown;
+    try {
+      raw = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON' }, 400);
+    }
+
+    const parsed = TransferBodySchema.safeParse(raw);
+    if (!parsed.success) {
+      return c.json({ error: 'Validation error', details: parsed.error.issues }, 400);
+    }
+    const body = parsed.data;
     c.set('parsedBody' as never, body);
 
     const payloadHash = await sha256(JSON.stringify(body));

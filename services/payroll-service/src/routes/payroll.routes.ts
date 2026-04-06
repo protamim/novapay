@@ -1,25 +1,38 @@
 import { Hono } from 'hono';
 import { eq, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { db } from '../db';
 import { disbursementRecords } from '../db/schema';
 import { createPayrollJob, getJobProgress } from '../services/payroll.service';
 import { enqueuePayrollJob } from '../queue/payroll.queue';
 
+const DisbursementSchema = z.object({
+  employeeId: z.string().min(1),
+  amount: z.string().min(1),
+  currency: z.string().min(1),
+});
+
+const CreatePayrollJobSchema = z.object({
+  employerId: z.string().min(1),
+  disbursements: z.array(DisbursementSchema).min(1),
+});
+
 const payroll = new Hono();
 
 // POST /payroll/jobs — submit a bulk payroll job
 payroll.post('/payroll/jobs', async (c) => {
-  let body: { employerId: string; disbursements: Array<{ employeeId: string; amount: string; currency: string }> };
+  let raw: unknown;
   try {
-    body = await c.req.json();
+    raw = await c.req.json();
   } catch {
     return c.json({ error: 'Invalid JSON' }, 400);
   }
 
-  if (!body.employerId) return c.json({ error: 'employerId is required' }, 400);
-  if (!Array.isArray(body.disbursements) || body.disbursements.length === 0) {
-    return c.json({ error: 'disbursements must be a non-empty array' }, 400);
+  const parsed = CreatePayrollJobSchema.safeParse(raw);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation error', details: parsed.error.issues }, 400);
   }
+  const body = parsed.data;
 
   const job = await createPayrollJob({
     employerId: body.employerId,

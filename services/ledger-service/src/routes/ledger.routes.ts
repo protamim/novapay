@@ -1,11 +1,27 @@
 import { Hono } from 'hono';
 import { trace } from '@opentelemetry/api';
+import { z } from 'zod';
 import {
   computeBalance,
   invariantCheck,
   verifyChain,
   writeEntries,
 } from '../services/ledger.service';
+
+const LedgerEntrySchema = z.object({
+  transactionId: z.string().min(1),
+  accountId: z.string().min(1),
+  entryType: z.enum(['DEBIT', 'CREDIT']),
+  amount: z.string().min(1),
+  currency: z.string().min(1),
+  lockedFxRate: z.string().optional(),
+  description: z.string().optional(),
+});
+
+const LedgerEntriesBodySchema = z.union([
+  z.array(LedgerEntrySchema).min(1),
+  z.object({ entries: z.array(LedgerEntrySchema).min(1) }),
+]);
 
 const ledger = new Hono();
 
@@ -17,19 +33,18 @@ ledger.post('/entries', async (c) => {
     return c.json({ error: 'Invalid JSON' }, 400);
   }
 
-  // Accept both a raw array and the { entries: [...] } wrapper form
-  const body = Array.isArray(raw) ? raw : (raw as any)?.entries;
-
-  if (!Array.isArray(body)) {
-    return c.json({ error: 'Body must be an array of ledger entries or { entries: [...] }' }, 400);
+  const parsed = LedgerEntriesBodySchema.safeParse(raw);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation error', details: parsed.error.issues }, 400);
   }
 
+  const entries = Array.isArray(parsed.data) ? parsed.data : parsed.data.entries;
+
   const span = trace.getActiveSpan();
-  const firstEntry = (body as Array<{ transactionId?: string }>)[0];
-  span?.setAttributes({ requestId: c.req.header('x-request-id') ?? '', transactionId: firstEntry?.transactionId ?? '' });
+  span?.setAttributes({ requestId: c.req.header('x-request-id') ?? '', transactionId: entries[0]?.transactionId ?? '' });
 
   try {
-    await writeEntries(body as any);
+    await writeEntries(entries as any);
     return c.json({ ok: true }, 201);
   } catch (err: any) {
     if (err.message?.startsWith('Ledger invariant')) {

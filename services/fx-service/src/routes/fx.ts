@@ -1,21 +1,35 @@
 import { Hono } from 'hono';
 import { eq, and, isNull } from 'drizzle-orm';
 import { trace } from '@opentelemetry/api';
+import { z } from 'zod';
 import { db } from '../db';
 import { fxQuotes } from '../db/schema';
 import { getRate, ProviderUnavailableError } from '../services/mockFxProvider';
 import { fxQuoteExpired } from '../metrics';
 
+const FxQuoteRequestSchema = z.object({
+  fromCurrency: z.string().min(1),
+  toCurrency: z.string().min(1),
+});
+
+const UuidSchema = z.uuid();
+
 const fx = new Hono();
 
 // POST /fx/quote — request a new FX rate quote (60-second TTL)
 fx.post('/quote', async (c) => {
-  const body = await c.req.json<{ fromCurrency: string; toCurrency: string }>();
-  const { fromCurrency, toCurrency } = body;
-
-  if (!fromCurrency || !toCurrency) {
-    return c.json({ error: 'fromCurrency and toCurrency are required' }, 400);
+  let raw: unknown;
+  try {
+    raw = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON' }, 400);
   }
+
+  const parsed = FxQuoteRequestSchema.safeParse(raw);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation error', details: parsed.error.issues }, 400);
+  }
+  const { fromCurrency, toCurrency } = parsed.data;
 
   const span = trace.getActiveSpan();
   span?.setAttributes({ requestId: c.req.header('x-request-id') ?? '' });
@@ -47,12 +61,10 @@ fx.post('/quote', async (c) => {
   );
 });
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 // GET /fx/quote/:id — fetch a quote with computed expiry / used state
 fx.get('/quote/:id', async (c) => {
   const id = c.req.param('id');
-  if (!UUID_REGEX.test(id)) return c.json({ error: 'Invalid quote ID format' }, 400);
+  if (!UuidSchema.safeParse(id).success) return c.json({ error: 'Invalid quote ID format' }, 400);
   const [quote] = await db.select().from(fxQuotes).where(eq(fxQuotes.id, id));
 
   if (!quote) return c.json({ error: 'Quote not found' }, 404);
@@ -71,7 +83,7 @@ fx.get('/quote/:id', async (c) => {
 // POST /fx/quote/:id/consume — internal-only; marks quote as used atomically
 fx.post('/quote/:id/consume', async (c) => {
   const id = c.req.param('id');
-  if (!UUID_REGEX.test(id)) return c.json({ error: 'Invalid quote ID format' }, 400);
+  if (!UuidSchema.safeParse(id).success) return c.json({ error: 'Invalid quote ID format' }, 400);
   const [quote] = await db.select().from(fxQuotes).where(eq(fxQuotes.id, id));
 
   const span = trace.getActiveSpan();

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { trace } from "@opentelemetry/api";
+import { z } from "zod";
 import {
   ConcurrentModificationError,
   InsufficientFundsError,
@@ -11,29 +12,46 @@ import {
   getWallet,
 } from "../services/account.service";
 
+const CreateWalletSchema = z.object({
+  userId: z.string().min(1),
+  currency: z.string().optional(),
+  accountRef: z.record(z.string(), z.unknown()).optional(),
+});
+
+const DebitSchema = z.object({
+  amount: z.string().min(1),
+});
+
+const CreditSchema = z.object({
+  amount: z.string().min(1),
+  transactionId: z.string().optional(),
+  currency: z.string().optional(),
+  isReversal: z.boolean().optional(),
+});
+
 const accounts = new Hono();
 
 accounts.post("/accounts", async (c) => {
-  let body: { userId: string; currency?: string; accountRef?: object };
+  let raw: unknown;
   try {
-    body = await c.req.json();
+    raw = await c.req.json();
   } catch {
     return c.json({ error: "Invalid JSON" }, 400);
   }
 
-  try {
-    if (!body.userId) return c.json({ error: "userId is required" }, 400);
+  const parsed = CreateWalletSchema.safeParse(raw);
+  if (!parsed.success) {
+    return c.json({ error: "Validation error", details: parsed.error.issues }, 400);
+  }
+  const body = parsed.data;
 
+  try {
     const span = trace.getActiveSpan();
     span?.setAttributes({
       requestId: c.req.header("x-request-id") ?? "",
       userId: body.userId,
     });
-    const wallet = await createWallet(
-      body.userId,
-      body.currency,
-      body.accountRef,
-    );
+    const wallet = await createWallet(body.userId, body.currency, body.accountRef);
     return c.json(wallet, 201);
   } catch (err) {
     console.error("Error creating wallet:", err, c.res.status);
@@ -61,14 +79,18 @@ accounts.get("/accounts/:userId", async (c) => {
 });
 
 accounts.post("/accounts/:userId/debit", async (c) => {
-  let body: { amount: string };
+  let raw: unknown;
   try {
-    body = await c.req.json();
+    raw = await c.req.json();
   } catch {
     return c.json({ error: "Invalid JSON" }, 400);
   }
 
-  if (!body.amount) return c.json({ error: "amount is required" }, 400);
+  const parsed = DebitSchema.safeParse(raw);
+  if (!parsed.success) {
+    return c.json({ error: "Validation error", details: parsed.error.issues }, 400);
+  }
+  const body = parsed.data;
 
   const span = trace.getActiveSpan();
   span?.setAttributes({
@@ -91,14 +113,18 @@ accounts.post("/accounts/:userId/debit", async (c) => {
 });
 
 accounts.post("/accounts/:userId/credit", async (c) => {
-  let body: { amount: string; transactionId?: string; currency?: string; isReversal?: boolean };
+  let raw: unknown;
   try {
-    body = await c.req.json();
+    raw = await c.req.json();
   } catch {
     return c.json({ error: "Invalid JSON" }, 400);
   }
 
-  if (!body.amount) return c.json({ error: "amount is required" }, 400);
+  const parsed = CreditSchema.safeParse(raw);
+  if (!parsed.success) {
+    return c.json({ error: "Validation error", details: parsed.error.issues }, 400);
+  }
+  const body = parsed.data;
 
   const span = trace.getActiveSpan();
   span?.setAttributes({
