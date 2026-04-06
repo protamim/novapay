@@ -38,6 +38,9 @@ ledger.post('/entries', async (c) => {
     if (err.message?.startsWith('Entry count')) {
       return c.json({ error: err.message }, 400);
     }
+    if (err.message?.startsWith('Insufficient funds')) {
+      return c.json({ error: err.message }, 422);
+    }
     throw err;
   }
 });
