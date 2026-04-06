@@ -15,6 +15,7 @@
     "@opentelemetry/resources": "latest",
     "@opentelemetry/sdk-node": "latest",
     "@opentelemetry/semantic-conventions": "latest",
+    "decimal.js": "^10.6.0",
     "drizzle-orm": "latest",
     "hono": "latest",
     "ioredis": "latest",

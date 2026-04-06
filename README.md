@@ -31,7 +31,7 @@ Microservice payment backend built to address four failure modes from an inciden
 ### Start everything
 
 ```bash
-git clone <repo>
+gh repo clone protamim/novapay
 cd novapay/infra
 docker compose up --build
 ```
@@ -41,6 +41,9 @@ This starts all six services, six PostgreSQL databases, Redis, Nginx, Prometheus
 ### Run tests
 
 ```bash
+# Install dependencies (required before first run)
+for s in services/*/; do (cd "$s" && bun install); done
+
 # Single service
 cd services/transaction-service && bun test
 
@@ -224,9 +227,12 @@ Response `201`:
   "transactionId": "9f8e7d6c-...",
   "status": "COMPLETED",
   "amount": "100",
-  "currency": "USD"
+  "currency": "USD",
+  "fee": "2.00000000"
 }
 ```
+
+A flat **$2 fee** is charged per transfer. The sender's wallet is debited `amount + $2`. The fee is collected as a balanced ledger pair: `DEBIT sender $2` / `CREDIT novapay_fee_acct $2`. On saga reversal, the full `amount + $2` is refunded to the sender.
 
 Duplicate key + same body → `200` with identical stored result. No second debit occurs.
 
@@ -248,7 +254,7 @@ Content-Type: application/json
 }
 ```
 
-Response `201`: same shape as domestic. The `lockedFxRate` is written to the ledger entry for permanent audit.
+Response `201`: same shape as domestic (includes `fee: "2.00000000"`). The `lockedFxRate` is written to the ledger entry for permanent audit.
 
 Response `422 QUOTE_EXPIRED`: quote TTL elapsed. Client must re-request a fresh quote.
 
@@ -421,7 +427,7 @@ Response `200` (all healthy) or `207` (one or more degraded):
 
 ## Idempotency — Five Scenarios
 
-Every mutating endpoint on transaction-service requires an `Idempotency-Key` header. The middleware stores `(key, SHA-256(request body), status, result)` in PostgreSQL using `INSERT … ON CONFLICT DO NOTHING RETURNING` before any money movement begins.
+Every mutating endpoint on transaction-service requires an `Idempotency-Key` header. Request bodies are validated with Zod before the idempotency check runs — a malformed request is rejected immediately with `400` and never touches the idempotency store. The middleware stores `(key, SHA-256(request body), status, result)` in PostgreSQL using `INSERT … ON CONFLICT DO NOTHING RETURNING` before any money movement begins.
 
 ### Scenario A — Duplicate request, same payload
 

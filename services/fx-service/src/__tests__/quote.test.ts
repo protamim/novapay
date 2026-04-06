@@ -95,7 +95,7 @@ describe('FX Quote — expiry enforcement', () => {
   test('consume returns 422 QUOTE_EXPIRED when expiresAt is 61s in the past', async () => {
     // Pre-load a quote that expired 61 seconds ago
     const expiredQuote = {
-      id: 'quote-expired',
+      id: 'a0000000-0000-4000-8000-000000000001',
       fromCurrency: 'USD',
       toCurrency: 'BDT',
       rate: '110.5',
@@ -105,7 +105,7 @@ describe('FX Quote — expiry enforcement', () => {
     };
     qst.selectReturn = [expiredQuote];
 
-    const res = await app.request('/fx/quote/quote-expired/consume', {
+    const res = await app.request('/fx/quote/a0000000-0000-4000-8000-000000000001/consume', {
       method: 'POST',
     });
 
@@ -120,7 +120,7 @@ describe('FX Quote — single-use enforcement', () => {
 
   test('second consume of same quote returns 422 QUOTE_ALREADY_USED', async () => {
     const freshQuote = {
-      id: 'quote-once',
+      id: 'b0000000-0000-4000-8000-000000000002',
       fromCurrency: 'USD',
       toCurrency: 'BDT',
       rate: '110.5',
@@ -133,16 +133,16 @@ describe('FX Quote — single-use enforcement', () => {
     qst.selectReturn = [freshQuote];
     qst.updateReturn = [{ ...freshQuote, usedAt: new Date() }]; // atomic update succeeds
 
-    const res1 = await app.request('/fx/quote/quote-once/consume', { method: 'POST' });
+    const res1 = await app.request('/fx/quote/b0000000-0000-4000-8000-000000000002/consume', { method: 'POST' });
     expect(res1.status).toBe(200);
     const b1 = (await res1.json()) as any;
-    expect(b1.quoteId).toBe('quote-once');
+    expect(b1.quoteId).toBe('b0000000-0000-4000-8000-000000000002');
 
     // ── Second consume: select now shows usedAt is set ──
     qst.selectReturn = [{ ...freshQuote, usedAt: new Date() }];
     qst.updateReturn = []; // atomic UPDATE WHERE usedAt IS NULL → 0 rows (race protection)
 
-    const res2 = await app.request('/fx/quote/quote-once/consume', { method: 'POST' });
+    const res2 = await app.request('/fx/quote/b0000000-0000-4000-8000-000000000002/consume', { method: 'POST' });
     expect(res2.status).toBe(422);
     const b2 = (await res2.json()) as any;
     expect(b2.error).toBe('QUOTE_ALREADY_USED');
