@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import { desc, eq, inArray, sql } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { balanceSnapshots, ledgerEntries } from '../db/schema';
 import { ledgerInvariantViolations } from '../metrics';
@@ -65,37 +65,7 @@ export async function writeEntries(entries: LedgerEntryInput[]): Promise<void> {
     let previousHash = lastEntry?.entryHash ?? GENESIS_HASH;
     const now = new Date();
 
-    // Pre-fetch current balances for accounts that will be debited so we can
-    // enforce the non-negative balance invariant before writing any entries.
-    const debitAccountIds = [
-      ...new Set(entries.filter((e) => e.entryType === 'DEBIT').map((e) => e.accountId)),
-    ];
-    const snapshots = debitAccountIds.length > 0
-      ? await tx
-          .select({ accountId: balanceSnapshots.accountId, balance: balanceSnapshots.balance })
-          .from(balanceSnapshots)
-          .where(inArray(balanceSnapshots.accountId, debitAccountIds))
-      : [];
-
-    // Running balances track the net effect of this batch so far (per account).
-    const runningBalances: Record<string, Decimal> = {};
-    for (const snap of snapshots) {
-      runningBalances[snap.accountId] = new Decimal(snap.balance);
-    }
-
     for (const entry of entries) {
-      // Enforce non-negative balance on DEBIT before writing.
-      if (entry.entryType === 'DEBIT') {
-        const current = runningBalances[entry.accountId] ?? new Decimal(0);
-        const after   = current.minus(new Decimal(entry.amount));
-        if (after.isNegative()) {
-          throw new Error(
-            `Insufficient funds: account ${entry.accountId} has ${current.toFixed(8)} but DEBIT requires ${entry.amount}`,
-          );
-        }
-        runningBalances[entry.accountId] = after;
-      }
-
       const entryHash = await computeEntryHash(
         previousHash,
         entry.transactionId,

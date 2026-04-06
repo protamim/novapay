@@ -25,14 +25,12 @@ const st = {
   lastEntryForChain: [] as any[], // what the chain-head SELECT returns
   capturedInserts: [] as any[],
   selectResult: [] as any[],
-  balanceSnapshots: [] as any[], // current balanceSnapshots rows for debited accounts
 };
 
 function reset() {
   st.lastEntryForChain = [];
   st.capturedInserts = [];
   st.selectResult = [];
-  st.balanceSnapshots = [];
 }
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
@@ -46,9 +44,7 @@ mock.module('../db', () => ({
             orderBy: () => ({
               limit: () => Promise.resolve(st.lastEntryForChain),
             }),
-            // balance snapshot query: .from(balanceSnapshots).where(inArray(...))
-            // Returns a Promise directly (awaited by writeEntries).
-            where: () => Promise.resolve(st.balanceSnapshots),
+            where: () => Promise.resolve([]),
           }),
         }),
         insert: (_table: any) => ({
@@ -108,9 +104,6 @@ describe('Ledger invariant — balanced pair', () => {
   beforeEach(reset);
 
   test('DEBIT $100 + CREDIT $100 → accepted, two entries written', async () => {
-    // Seed alice with sufficient balance so the DEBIT is valid.
-    st.balanceSnapshots = [{ accountId: 'alice', balance: '100.00000000' }];
-
     const entries = [
       { transactionId: 'txn-bal', accountId: 'alice', entryType: 'DEBIT' as const, amount: '100', currency: 'USD', description: 'Debit alice' },
       { transactionId: 'txn-bal', accountId: 'bob',   entryType: 'CREDIT' as const, amount: '100', currency: 'USD', description: 'Credit bob' },
@@ -118,36 +111,6 @@ describe('Ledger invariant — balanced pair', () => {
 
     await expect(writeEntries(entries)).resolves.toBeUndefined();
     expect(st.capturedInserts.filter((r) => r.entryType !== undefined).length).toBe(2);
-  });
-});
-
-describe('Ledger invariant — insufficient funds', () => {
-  beforeEach(reset);
-
-  test('DEBIT exceeds balance → throws Insufficient funds error, no entries written', async () => {
-    // alice only has 40, but we try to DEBIT 100.
-    st.balanceSnapshots = [{ accountId: 'alice', balance: '40.00000000' }];
-
-    const entries = [
-      { transactionId: 'txn-nsf', accountId: 'alice', entryType: 'DEBIT' as const, amount: '100', currency: 'USD', description: 'Debit alice' },
-      { transactionId: 'txn-nsf', accountId: 'bob',   entryType: 'CREDIT' as const, amount: '100', currency: 'USD', description: 'Credit bob' },
-    ];
-
-    await expect(writeEntries(entries)).rejects.toThrow(/Insufficient funds/);
-    // Transaction is rolled back — no ledger entries should be captured.
-    expect(st.capturedInserts.filter((r) => r.entryType !== undefined).length).toBe(0);
-  });
-
-  test('DEBIT with zero balance → throws Insufficient funds error', async () => {
-    // alice has no snapshot (defaults to 0) and we DEBIT 50.
-    st.balanceSnapshots = [];
-
-    const entries = [
-      { transactionId: 'txn-zero', accountId: 'alice', entryType: 'DEBIT' as const, amount: '50', currency: 'USD', description: 'Debit alice' },
-      { transactionId: 'txn-zero', accountId: 'bob',   entryType: 'CREDIT' as const, amount: '50', currency: 'USD', description: 'Credit bob' },
-    ];
-
-    await expect(writeEntries(entries)).rejects.toThrow(/Insufficient funds/);
   });
 });
 
@@ -168,7 +131,6 @@ describe('Audit hash chain', () => {
   beforeEach(reset);
 
   test("second entry's previousHash equals first entry's entryHash", async () => {
-    st.balanceSnapshots = [{ accountId: 'alice', balance: '50.00000000' }];
     const entries = [
       { transactionId: 'txn-chain', accountId: 'alice', entryType: 'DEBIT' as const, amount: '50', currency: 'USD', description: 'D' },
       { transactionId: 'txn-chain', accountId: 'bob',   entryType: 'CREDIT' as const, amount: '50', currency: 'USD', description: 'C' },
@@ -191,7 +153,6 @@ describe('Audit hash chain', () => {
   });
 
   test('hash values are valid 64-char hex strings', async () => {
-    st.balanceSnapshots = [{ accountId: 'alice', balance: '75.00000000' }];
     const entries = [
       { transactionId: 'txn-hex', accountId: 'alice', entryType: 'DEBIT' as const, amount: '75', currency: 'EUR', description: 'D' },
       { transactionId: 'txn-hex', accountId: 'bob',   entryType: 'CREDIT' as const, amount: '75', currency: 'EUR', description: 'C' },
